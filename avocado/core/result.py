@@ -231,7 +231,7 @@ class HumanTestResult(TestResult):
                 logdir = os.path.dirname(self.logfile)
                 html_file = os.path.join(logdir, 'html', 'results.html')
                 self.log.info("JOB HTML   : %s", html_file)
-        self.log.info("TIME       : %.2f s", self.total_time)
+        self.log.info("TESTS TIME : %.2f s", self.total_time)
 
     def start_test(self, state):
         super(HumanTestResult, self).start_test(state)
@@ -256,8 +256,11 @@ class HumanTestResult(TestResult):
                    'SKIP': output.TERM_SUPPORT.SKIP,
                    'WARN': output.TERM_SUPPORT.WARN,
                    'INTERRUPTED': output.TERM_SUPPORT.INTERRUPT}
+        duration = (" (%.2f s)" % state.get('time_elapsed', -1)
+                    if status != "SKIP"
+                    else "")
         self.log.debug(output.TERM_SUPPORT.MOVE_BACK + mapping[status] +
-                       status + output.TERM_SUPPORT.ENDC)
+                       status + output.TERM_SUPPORT.ENDC + duration)
 
     def notify_progress(self, progress=False):
         if progress:

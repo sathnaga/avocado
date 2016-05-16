@@ -1,12 +1,12 @@
 %global modulename avocado
 %if ! 0%{?commit:1}
- %define commit c71e2c8ef354afa05554ad32aa08d2684b7b5440
+ %define commit 523c0e415e04691807fe7ff6b16c4067c2aa97c6
 %endif
 %global shortcommit %(c=%{commit}; echo ${c:0:7})
 
 Summary: Avocado Test Framework
 Name: avocado
-Version: 0.34.0
+Version: 35.0
 Release: 1%{?dist}
 License: GPLv2
 Group: Development/Tools
@@ -88,7 +88,7 @@ selftests/run
 
 %package plugins-output-html
 Summary: Avocado HTML report plugin
-Requires: avocado, pystache
+Requires: avocado == %{version}, pystache
 
 %description plugins-output-html
 Adds to avocado the ability to generate an HTML report at every job results
@@ -101,7 +101,7 @@ arbitrary filesystem location.
 
 %package examples
 Summary: Avocado Test Framework Example Tests
-Requires: avocado
+Requires: avocado == %{version}
 
 %description examples
 The set of example tests present in the upstream tree of the Avocado framework.
@@ -110,10 +110,15 @@ examples of how to write tests on your own.
 
 %files examples
 %{_datadir}/avocado/tests
-%{_datadir}/avocado/simpletests
 %{_datadir}/avocado/wrappers
 
 %changelog
+* Thu May 05 2016 Amador Pahim <apahim@redhat.com> - 35.0-1
+- Removed simpletests directory
+
+* Wed Apr 27 2016 Cleber Rosa <cleber@redhat.com> - 35.0-0
+- New upstream release 35.0 (new versioning scheme)
+
 * Thu Apr 14 2016 Cleber Rosa <cleber@redhat.com> - 0.34.0-1
 - Added job pre/post scripts directories
 

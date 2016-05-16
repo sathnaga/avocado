@@ -36,6 +36,9 @@ from ..utils import stacktrace
 from ..utils import runtime
 from ..utils import process
 
+TEST_LOG = logging.getLogger("avocado.test")
+APP_LOG = logging.getLogger("avocado.app")
+
 
 class TestStatus(object):
 
@@ -66,9 +69,8 @@ class TestStatus(object):
         # Let's catch all exceptions, since errors here mean a
         # crash in avocado.
         except Exception as details:
-            log = logging.getLogger("avocado.app")
-            log.error("\nError receiving message from test: %s -> %s",
-                      details.__class__, details)
+            APP_LOG.error("\nError receiving message from test: %s -> %s",
+                          details.__class__, details)
             stacktrace.log_exc_info(sys.exc_info(),
                                     'avocado.app.tracebacks')
             return None
@@ -169,8 +171,7 @@ class TestStatus(object):
             test_state['traceback'] = 'Traceback not available'
             with open(test_state['logfile'], 'r') as log_file_obj:
                 test_state['text_output'] = log_file_obj.read()
-            test_log = logging.getLogger('avocado.test')
-            test_log.error('ERROR %s -> TestAbortedError: '
+            TEST_LOG.error('ERROR %s -> TestAbortedError: '
                            'Test aborted unexpectedly',
                            test_state['name'])
             status = test_state
@@ -221,13 +222,19 @@ class TestRunner(object):
         """
         signal.signal(signal.SIGTSTP, signal.SIG_IGN)
         logger_list_stdout = [logging.getLogger('avocado.test.stdout'),
-                              logging.getLogger('avocado.test'),
+                              TEST_LOG,
                               logging.getLogger('paramiko')]
         logger_list_stderr = [logging.getLogger('avocado.test.stderr'),
-                              logging.getLogger('avocado.test'),
+                              TEST_LOG,
                               logging.getLogger('paramiko')]
         sys.stdout = output.LoggingFile(logger=logger_list_stdout)
         sys.stderr = output.LoggingFile(logger=logger_list_stderr)
+
+        def sigterm_handler(signum, frame):     # pylint: disable=W0613
+            """ Produce traceback on SIGTERM """
+            raise SystemExit("Test interrupted by SIGTERM")
+
+        signal.signal(signal.SIGTERM, sigterm_handler)
 
         instance = loader.load_test(test_factory)
         if instance.runner_queue is None:
@@ -236,17 +243,6 @@ class TestRunner(object):
         early_state = instance.get_state()
         early_state['early_status'] = True
         queue.put(early_state)
-
-        def timeout_handler(signum, frame):
-            e_msg = "Timeout reached waiting for %s to end" % instance
-            raise exceptions.TestTimeoutInterrupted(e_msg)
-
-        def interrupt_handler(signum, frame):
-            e_msg = "Test %s interrupted by user" % instance
-            raise exceptions.TestInterruptedError(e_msg)
-
-        signal.signal(signal.SIGUSR1, timeout_handler)
-        signal.signal(signal.SIGINT, interrupt_handler)
 
         self.result.start_test(early_state)
         try:
@@ -289,15 +285,13 @@ class TestRunner(object):
             with sigtstp:
                 msg = "ctrl+z pressed, %%s test (%s)" % proc.pid
                 if self.sigstopped:
-                    logging.getLogger("avocado.app").info("\n" + msg,
-                                                          "resumming")
-                    logging.getLogger("avocado.test").info(msg, "resumming")
+                    APP_LOG.info("\n" + msg, "resumming")
+                    TEST_LOG.info(msg, "resumming")
                     process.kill_process_tree(proc.pid, signal.SIGCONT, False)
                     self.sigstopped = False
                 else:
-                    logging.getLogger("avocado.app").info("\n" + msg,
-                                                          "stopping")
-                    logging.getLogger("avocado.test").info(msg, "stopping")
+                    APP_LOG.info("\n" + msg, "stopping")
+                    TEST_LOG.info(msg, "stopping")
                     process.kill_process_tree(proc.pid, signal.SIGSTOP, False)
                     self.sigstopped = True
 
@@ -331,12 +325,14 @@ class TestRunner(object):
         stage_2_msg_displayed = False
         first = 0.01
         step = 0.1
+        abort_reason = None
 
         while True:
             try:
                 if time.time() >= deadline:
+                    abort_reason = "Timeout reached"
                     try:
-                        os.kill(proc.pid, signal.SIGUSR1)
+                        os.kill(proc.pid, signal.SIGTERM)
                     except OSError:
                         pass
                     break
@@ -358,6 +354,7 @@ class TestRunner(object):
                 ctrl_c_count += 1
                 if ctrl_c_count == 1:
                     if not stage_1_msg_displayed:
+                        abort_reason = "Interrupted by ctrl+c"
                         self.job.log.debug("\nInterrupt requested. Waiting %d "
                                            "seconds for test to finish "
                                            "(ignoring new Ctrl+C until then)",
@@ -366,6 +363,7 @@ class TestRunner(object):
                     ignore_time_started = time.time()
                 if (ctrl_c_count > 1) and (time_elapsed > ignore_window):
                     if not stage_2_msg_displayed:
+                        abort_reason = "Interrupted by ctrl+c (multiple-times)"
                         self.job.log.debug("Killing test subprocess %s",
                                            proc.pid)
                         stage_2_msg_displayed = True
@@ -377,6 +375,20 @@ class TestRunner(object):
         else:
             test_state = test_status.abort(proc, time_started, cycle_timeout,
                                            first, step)
+
+        # Try to log the timeout reason to test's results and update test_state
+        if abort_reason:
+            TEST_LOG.error(abort_reason)
+            test_log = test_state.get("logfile")
+            if test_log:
+                open(test_log, "a").write("\nRUNNER: " + abort_reason + "\n")
+            if test_state.get("text_output"):
+                test_state["text_output"] += "\nRUNNER: " + abort_reason + "\n"
+            else:
+                test_state["text_output"] = abort_reason
+            test_state["status"] = "INTERRUPTED"
+            test_state["fail_reason"] = abort_reason
+            test_state["fail_class"] = "RUNNER"
 
         # don't process other tests from the list
         if ctrl_c_count > 0:
@@ -427,42 +439,47 @@ class TestRunner(object):
         no_digits = len(str(test_result_total))
 
         index = -1
-        for test_template in test_suite:
-            test_template[1]['base_logdir'] = self.job.logdir
-            test_template[1]['job'] = self.job
-            break_loop = False
-            for test_factory, variant in mux.itertests(test_template):
-                index += 1
-                test_parameters = test_factory[1]
-                name = test_parameters.get("name")
-                test_parameters["name"] = test.TestName(index + 1, name,
-                                                        variant,
-                                                        no_digits)
-                if deadline is not None and time.time() > deadline:
-                    summary.add('INTERRUPTED')
-                    if 'methodName' in test_parameters:
-                        del test_parameters['methodName']
-                    test_factory = (test.TimeOutSkipTest, test_parameters)
-                    break_loop = not self.run_test(test_factory, queue,
-                                                   summary)
-                    if break_loop:
-                        break
-                else:
-                    if (replay_map is not None and
-                            replay_map[index] is not None):
-                        test_parameters["methodName"] = "test"
-                        test_factory = (replay_map[index], test_parameters)
+        try:
+            for test_template in test_suite:
+                test_template[1]['base_logdir'] = self.job.logdir
+                test_template[1]['job'] = self.job
+                break_loop = False
+                for test_factory, variant in mux.itertests(test_template):
+                    index += 1
+                    test_parameters = test_factory[1]
+                    name = test_parameters.get("name")
+                    test_parameters["name"] = test.TestName(index + 1, name,
+                                                            variant,
+                                                            no_digits)
+                    if deadline is not None and time.time() > deadline:
+                        summary.add('INTERRUPTED')
+                        if 'methodName' in test_parameters:
+                            del test_parameters['methodName']
+                        test_factory = (test.TimeOutSkipTest, test_parameters)
+                        break_loop = not self.run_test(test_factory, queue,
+                                                       summary)
+                        if break_loop:
+                            break
+                    else:
+                        if (replay_map is not None and
+                                replay_map[index] is not None):
+                            test_parameters["methodName"] = "test"
+                            test_factory = (replay_map[index], test_parameters)
 
-                    break_loop = not self.run_test(test_factory, queue,
-                                                   summary, deadline)
-                    if break_loop:
-                        break
-            runtime.CURRENT_TEST = None
-            if break_loop:
-                break
-        self.result.end_tests()
-        self.job.funcatexit.run()
+                        break_loop = not self.run_test(test_factory, queue,
+                                                       summary, deadline)
+                        if break_loop:
+                            break
+                runtime.CURRENT_TEST = None
+                if break_loop:
+                    break
+        except KeyboardInterrupt:
+            TEST_LOG.error('Job interrupted by ctrl+c.')
+            summary.add('INTERRUPTED')
+
         if self.job.sysinfo is not None:
             self.job.sysinfo.end_job_hook()
+        self.result.end_tests()
+        self.job.funcatexit.run()
         signal.signal(signal.SIGTSTP, signal.SIG_IGN)
         return summary

@@ -1,5 +1,5 @@
-#!/usr/bin/env python
-
+#!/bin/sh -e
+#
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
 # the Free Software Foundation; either version 2 of the License, or
@@ -11,16 +11,18 @@
 #
 # See LICENSE for more details.
 #
-# Copyright: Red Hat Inc. 2013-2014
-# Author: Lucas Meneghel Rodrigues <lmr@redhat.com>
+# Copyright: Red Hat Inc. 2016
+#
+# This script restores the original settings of the systemwide kernel
+# core pattern once the job finishes running tests
+#
 
-__all__ = ['MAJOR', 'MINOR', 'VERSION']
+if [ -z $AVOCADO_JOB_LOGDIR ]; then
+   exit 1
+fi
 
-
-MAJOR = 35
-MINOR = 0
-
-VERSION = "%s.%s" % (MAJOR, MINOR)
-
-if __name__ == '__main__':
-    print(VERSION)
+BACKUP_CORE_PATTERN="$AVOCADO_JOB_LOGDIR/coredumps/.backup_core_pattern"
+if [ -f $BACKUP_CORE_PATTERN ]; then
+    cat $BACKUP_CORE_PATTERN > /proc/sys/kernel/core_pattern
+    rm $BACKUP_CORE_PATTERN
+fi

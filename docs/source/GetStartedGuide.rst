@@ -9,14 +9,15 @@ The first step towards using Avocado is, quite obviously, installing it.
 Installing Avocado
 ==================
 
-Avocado is available in RPM packages for Fedora, and `DEB packages for Ubuntu`_.
-
-.. _DEB packages for Ubuntu: https://launchpad.net/~lmr/+archive/avocado
+Avocado is officially available in RPM packages for Fedora and
+Enterprise Linux.  Other RPM based distributions may package and ship
+Avocado themselves.  DEB package support is available in the source
+tree (look at the ``contrib/packages/debian`` directory).
 
 .. Note: the following text should instead reference the distro tiers levels
 
 Avocado is primarily being developed on Fedora, but reasonable efforts
-are being made to support other platforms such as Ubuntu.
+are being made to support other GNU/Linux based platforms.
 
 Fedora
 ------
@@ -37,16 +38,6 @@ such as CentOS, just adapt to the following URL and commands::
     # Add avocado repository and install avocado
     sudo curl https://repos-avocadoproject.rhcloud.com/static/avocado-el.repo -o /etc/yum.repos.d/avocado.repo
     sudo yum install avocado
-
-
-Ubuntu
-------
-
-You can install Avocado by running the following commands::
-
-    sudo echo "deb http://ppa.launchpad.net/lmr/avocado/ubuntu utopic main" >> /etc/apt/sources.list
-    sudo apt-get update
-    sudo apt-get install avocado
 
 Generic installation from a GIT repository
 ------------------------------------------
@@ -79,7 +70,9 @@ line tool that will conveniently run your tests and collect their results.
 Running Tests
 -------------
 
-To do so, please run ``avocado`` with the ``run`` sub-command and the chosen test::
+To do so, please run ``avocado`` with the ``run`` sub-command followed by
+a test reference, which could be either a path to the file, or a
+recognizable name::
 
     $ avocado run /bin/true
     JOB ID    : 381b849a62784228d2fd208d929cc49f310412dc
@@ -88,7 +81,7 @@ To do so, please run ``avocado`` with the ``run`` sub-command and the chosen tes
      (1/1) /bin/true: PASS (0.01 s)
     RESULTS    : PASS 1 | ERROR 0 | FAIL 0 | SKIP 0 | WARN 0 | INTERRUPT 0
     JOB HTML  : $HOME/avocado/job-results/job-2014-08-12T15.39-381b849a/html/results.html
-    TIME : 0.01 s
+    TESTS TIME : 0.01 s
 
 You probably noticed that we used ``/bin/true`` as a test, and in accordance with our
 expectations, it passed! These are known as `simple tests`, but there is also another
@@ -108,7 +101,7 @@ using the ``--dry-run`` argument::
      (1/1) /bin/true: SKIP
     RESULTS    : PASS 0 | ERROR 0 | FAIL 0 | SKIP 1 | WARN 0 | INTERRUPT 0
     JOB HTML   : /tmp/avocado-dry-runSeWniM/job-2015-10-16T15.46-0000000/html/results.html
-    TIME       : 0.00 s
+    TESTS TIME : 0.00 s
 
 which supports all ``run`` arguments, simulates the run and even lists the test params.
 
@@ -136,16 +129,19 @@ The output might look like this::
     INSTRUMENTED /usr/share/avocado/tests/trinity.py
     INSTRUMENTED /usr/share/avocado/tests/warntest.py
     INSTRUMENTED /usr/share/avocado/tests/whiteboard.py
+    ...
 
 These Python files are considered by Avocado to contain ``INSTRUMENTED``
 tests.
 
-Let's now list a directory with a bunch of executable shell
-scripts::
+Let's now list only the executable shell scripts::
 
-   $ avocado list /usr/share/avocado/simpletests/
-   SIMPLE /usr/share/avocado/simpletests/failtest.sh
-   SIMPLE /usr/share/avocado/simpletests/passtest.sh
+    $ avocado list | grep ^SIMPLE
+    SIMPLE       /usr/share/avocado/tests/env_variables.sh
+    SIMPLE       /usr/share/avocado/tests/output_check.sh
+    SIMPLE       /usr/share/avocado/tests/simplewarning.sh
+    SIMPLE       /usr/share/avocado/tests/failtest.sh
+    SIMPLE       /usr/share/avocado/tests/passtest.sh
 
 Here, as mentioned before, ``SIMPLE`` means that those files are executables
 treated as simple tests. You can also give the ``--verbose`` or ``-V`` flag to
@@ -182,19 +178,20 @@ Running A More Complex Test Job
 You can run any number of test in an arbitrary order, as well as mix and match
 instrumented and simple tests::
 
-    $ avocado run failtest sleeptest synctest failtest synctest /tmp/simple_test.sh
+    $ avocado run failtest.py sleeptest.py synctest.py failtest.py synctest.py /tmp/simple_test.sh
     JOB ID    : 86911e49b5f2c36caeea41307cee4fecdcdfa121
     JOB LOG   : $HOME/avocado/job-results/job-2014-08-12T15.42-86911e49/job.log
     TESTS     : 6
-     (1/6) failtest.1: FAIL (0.00 s)
-     (2/6) sleeptest.1: PASS (1.00 s)
-     (3/6) synctest.1: ERROR (0.01 s)
-     (4/6) failtest.2: FAIL (0.00 s)
-     (5/6) synctest.2: ERROR (0.01 s)
+     (1/6) failtest.py:FailTest.test: FAIL (0.00 s)
+     (2/6) sleeptest.py:SleepTest.test: PASS (1.00 s)
+     (3/6) synctest.py:SyncTest.test: PASS (2.43 s)
+     (4/6) failtest.py:FailTest.test: FAIL (0.00 s)
+     (5/6) synctest.py:SyncTest.test: PASS (2.44 s)
+     (6/6) /bin/true: PASS (0.00 s)
      (6/6) /tmp/simple_test.sh.1: PASS (0.02 s)
     RESULTS    : PASS 2 | ERROR 2 | FAIL 2 | SKIP 0 | WARN 0 | INTERRUPT 0
     JOB HTML  : $HOME/avocado/job-results/job-2014-08-12T15.42-86911e49/html/results.html
-    TIME      : 1.04 s
+    TESTS TIME : 5.88 s
 
 .. _running-external-runner:
 
@@ -232,12 +229,12 @@ files with shell code could be considered tests::
     $ avocado run --external-runner=/bin/sh /tmp/pass /tmp/fail
     JOB ID     : 4a2a1d259690cc7b226e33facdde4f628ab30741
     JOB LOG    : /home/<user>/avocado/job-results/job-<date>-<shortid>/job.log
-    JOB HTML   : /home/<user>/avocado/job-results/job-<date>-<shortid>/html/results.html
     TESTS      : 2
     (1/2) /tmp/pass: PASS (0.01 s)
     (2/2) /tmp/fail: FAIL (0.01 s)
     RESULTS    : PASS 1 | ERROR 0 | FAIL 1 | SKIP 0 | WARN 0 | INTERRUPT 0
-    TIME       : 0.01 s
+    JOB HTML   : /home/<user>/avocado/job-results/job-<date>-<shortid>/html/results.html
+    TESTS TIME : 0.01 s
 
 This example is pretty obvious, and could be achieved by giving
 `/tmp/pass` and `/tmp/fail` shell "shebangs" (`#!/bin/sh`), making
@@ -250,12 +247,12 @@ But now consider the following example::
                                            http://remote-avocado-server:9405/jobs/
     JOB ID     : 56016a1ffffaba02492fdbd5662ac0b958f51e11
     JOB LOG    : /home/<user>/avocado/job-results/job-<date>-<shortid>/job.log
-    JOB HTML   : /home/<user>/avocado/job-results/job-<date>-<shortid>/html/results.html
     TESTS      : 2
     (1/2) http://local-avocado-server:9405/jobs/: PASS (0.02 s)
     (2/2) http://remote-avocado-server:9405/jobs/: FAIL (3.02 s)
     RESULTS    : PASS 1 | ERROR 0 | FAIL 1 | SKIP 0 | WARN 0 | INTERRUPT 0
-    TIME       : 3.04 s
+    JOB HTML   : /home/<user>/avocado/job-results/job-<date>-<shortid>/html/results.html
+    TESTS TIME : 3.04 s
 
 This effectively makes `/bin/curl` an "external test runner", responsible for
 trying to fetch those URLs, and reporting PASS or FAIL for each of them.
@@ -266,17 +263,19 @@ Debugging tests
 When developing new tests, you frequently want to look straight at the
 job log, without switching screens or having to "tail" the job log.
 
-In order to do that, you can use ``--show-job-log`` option::
+In order to do that, you can use ``avocado --show test run ...`` or
+``avocado run --show-job-log ...`` options::
 
-    $ avocado run examples/tests/sleeptest --show-job-log
+    $ avocado --show test run examples/tests/sleeptest.py
+    ...
     Job ID: f9ea1742134e5352dec82335af584d1f151d4b85
 
-    START examples/tests/sleeptest.py
+    START 1-sleeptest.py:SleepTest.test
 
     PARAMS (key=timeout, path=*, default=None) => None
     PARAMS (key=sleep_length, path=*, default=1) => 1
     Sleeping for 1.00 seconds
-    PASS examples/tests/sleeptest.py
+    PASS 1-sleeptest.py:SleepTest.test
 
     Test results available in $HOME/avocado/job-results/job-2015-06-02T10.45-f9ea174
 

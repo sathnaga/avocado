@@ -1,8 +1,10 @@
 #!/usr/bin/env python
 
+import os
+
 from avocado import Test
 from avocado import main
-from avocado.utils import kernel_build
+from avocado.utils import kernel
 
 
 class LinuxBuildTest(Test):
@@ -20,9 +22,9 @@ class LinuxBuildTest(Test):
         if linux_config is not None:
             linux_config = os.path.join(self.datadir, linux_config)
 
-        self.linux_build = kernel_build.KernelBuild(kernel_version,
-                                                    linux_config,
-                                                    self.srcdir)
+        self.linux_build = kernel.KernelBuild(kernel_version,
+                                              linux_config,
+                                              self.srcdir)
         self.linux_build.download()
         self.linux_build.uncompress()
         self.linux_build.configure()
